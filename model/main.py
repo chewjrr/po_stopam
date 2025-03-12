@@ -84,3 +84,4 @@ m.save(file_path)
 
 # Автоматическое открытие файла в браузере
 webbrowser.open('file://' + os.path.abspath(file_path))
+#nvnvnv
