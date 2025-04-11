@@ -1,0 +1,96 @@
+definitions:
+  model.Place:
+    properties:
+      coordinates:
+        description: Координаты
+        items:
+          type: number
+        type: array
+      name:
+        description: Название места
+        type: string
+    type: object
+  model.RouteRequest:
+    properties:
+      budget:
+        description: Бюджет
+        type: string
+      places:
+        description: Список категорий
+        items:
+          type: string
+        type: array
+      time:
+        description: Время прогулки
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /generate-coordinates:
+    post:
+      consumes:
+      - application/json
+      description: Принимает параметры для генерации маршрута и возвращает только
+        координаты
+      parameters:
+      - description: Параметры запроса
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Пример: [[55.7270939,37.6002408], ...]'
+          schema:
+            items:
+              type: array
+            type: array
+        "400":
+          description: Неверный формат запроса
+          schema:
+            type: string
+        "500":
+          description: Ошибка генерации маршрута
+          schema:
+            type: string
+      summary: Генерирует только координаты маршрута
+      tags:
+      - Маршруты
+  /generate-route:
+    post:
+      consumes:
+      - application/json
+      description: Принимает параметры для генерации маршрута и возвращает список
+        мест с координатами
+      parameters:
+      - description: Параметры запроса
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Place'
+            type: array
+        "400":
+          description: Неверный формат запроса
+          schema:
+            type: string
+        "500":
+          description: Ошибка генерации маршрута
+          schema:
+            type: string
+      summary: Генерирует маршрут с местами и координатами
+      tags:
+      - Маршруты
+swagger: "2.0"
