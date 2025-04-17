@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "637166226761",
+    "project_id": "startap-maps",
+    "storage_bucket": "startap-maps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637166226761:android:b3d3ec1c8707acf9565e98",
+        "android_client_info": {
+          "package_name": "com.example.maps"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDHfFejJsqvm-9zLihsh1vlcQQUb2emL0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637166226761:android:383a527b4532c026565e98",
+        "android_client_info": {
+          "package_name": "com.example.startap_maps"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDHfFejJsqvm-9zLihsh1vlcQQUb2emL0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
