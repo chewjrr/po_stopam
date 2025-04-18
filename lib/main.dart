@@ -1,18 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:startap_maps/firebase_options.dart';
-import 'package:startap_maps/services/auth/auth_gate.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:startap_maps/firebase_options.dart';
 import 'package:startap_maps/services/auth/auth_service.dart';
+import 'package:startap_maps/services/map_service.dart';
+import 'package:startap_maps/services/route_service.dart';
+import 'package:startap_maps/services/firestore_service.dart';
+import 'package:startap_maps/services/auth/auth_gate.dart';
 import 'package:startap_maps/pages/HomePage.dart';
 import 'package:startap_maps/pages/ProfilePage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => AuthService(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthService()),
+        Provider(create: (_) => FirestoreService()),
+        Provider(create: (_) => MapService()),
+        ProxyProvider2<MapService, FirestoreService, RouteService>(
+          update: (context, mapService, firestoreService, _) => RouteService(
+            mapService,
+            firestoreService,
+          ),
+        ),
+      ],
       child: const MyApp(),
     ),
   );
@@ -23,10 +40,32 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: AuthGate(),
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          selectedItemColor: Colors.blue,
+          unselectedItemColor: Colors.grey,
+        ),
+      ),
+      home: const AuthWrapper(),
     );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final authService = Provider.of<AuthService>(context);
+
+    if (authService.currentUser == null) {
+      return const AuthGate();
+    } else {
+      return const MainLayout();
+    }
   }
 }
 
@@ -40,22 +79,21 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
 
-  final List<Widget> _pages = [
-    const HomePage(),
-    const ProfilePage(),
+  final List<Widget> _pages = const [
+    HomePage(),
+    ProfilePage(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
@@ -66,11 +104,7 @@ class _MainLayoutState extends State<MainLayout> {
             label: 'Профиль',
           ),
         ],
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
       ),
     );
   }
 }
-
-

@@ -5,6 +5,9 @@ import 'package:flutter/cupertino.dart';
 class AuthService extends ChangeNotifier{
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  User? get currentUser => _auth.currentUser;
 
   Future<UserCredential> singInWithEmailandPassword(String email, String password) async{
     try {

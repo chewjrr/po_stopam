@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:startap_maps/models/route_model.dart';
 import 'package:startap_maps/services/auth/auth_service.dart';
+import 'package:startap_maps/services/map_service.dart';
+import 'package:startap_maps/services/route_service.dart';
+import 'package:startap_maps/widgets/map_widget.dart';
+import 'package:startap_maps/widgets/route_bottom_sheet.dart';
+import 'package:startap_maps/widgets/search_bar.dart';
+import 'package:startap_maps/widgets/save_route_dialog.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,16 +19,14 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final MapController _mapController = MapController();
-  final Distance _distanceCalculator = const Distance();
+  late final MapService _mapService;
+  late final RouteService _routeService;
+  final List<String> _filterOptions = ['Кафе', 'Парки', 'Музеи', 'ТЦ'];
 
   LatLng _currentPosition = const LatLng(55.7558, 37.6176);
   double _zoomLevel = 13.0;
   List<Marker> _markers = [];
   List<LatLng> _routePoints = [];
-  final List<String> _filterOptions = ['Кафе', 'Парки', 'Музеи', 'ТЦ'];
   String? _selectedCategory;
   LatLng? _startPoint;
   LatLng? _endPoint;
@@ -35,6 +38,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _mapService = Provider.of<MapService>(context, listen: false);
+    _routeService = Provider.of<RouteService>(context, listen: false);
     _determinePosition();
     _addSampleMarkers();
   }
@@ -68,7 +73,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _addPoint(LatLng point) async {
+  Future<void> _addPoint(LatLng point) async {
     if (!_isRouteBuilding || _selectedCategory == null) return;
 
     setState(() {
@@ -84,7 +89,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final nearest = await _findNearestPoint(point, _selectedCategory!);
+      final nearest = await _routeService.findNearestPoint(point, _selectedCategory!);
       if (nearest != null) {
         await _buildRoute(point, nearest);
       }
@@ -103,51 +108,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<LatLng?> _findNearestPoint(LatLng startPoint, String category) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    final places = {
-      'Кафе': [
-        const LatLng(55.7604, 37.6186),
-        const LatLng(55.7517, 37.6178),
-      ],
-      'Парки': [
-        const LatLng(55.7338, 37.5889),
-        const LatLng(55.7905, 37.5836),
-      ],
-      'Музеи': [
-        const LatLng(55.7480, 37.6085),
-        const LatLng(55.7157, 37.5542),
-      ],
-      'ТЦ': [
-        const LatLng(55.7507, 37.6172),
-        const LatLng(55.7580, 37.6225),
-      ],
-    };
-
-    if (!places.containsKey(category)) return null;
-
-    final points = places[category]!;
-    LatLng nearest = points.first;
-    double minDistance = _distanceCalculator(startPoint, nearest);
-
-    for (final point in points) {
-      final distance = _distanceCalculator(startPoint, point);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearest = point;
-      }
-    }
-
-    return nearest;
-  }
-
   Future<void> _buildRoute(LatLng start, LatLng end) async {
     setState(() => _isLoadingRoute = true);
 
     try {
-      _routePoints = _generateRoutePoints(start, end);
-      _routeDistance = _distanceCalculator(start, end) / 1000;
+      _routePoints = await _routeService.buildRoute(start, end);
+      _routeDistance = _mapService.distanceCalculator(start, end) / 1000;
       _routeDuration = (_routeDistance * 15).toInt();
 
       setState(() {
@@ -160,19 +126,13 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  List<LatLng> _generateRoutePoints(LatLng start, LatLng end) {
-    final List<LatLng> points = [];
-    const int steps = 10;
-
-    for (int i = 0; i <= steps; i++) {
-      final ratio = i / steps;
-      points.add(LatLng(
-        start.latitude + (end.latitude - start.latitude) * ratio,
-        start.longitude + (end.longitude - start.longitude) * ratio,
-      ));
-    }
-
-    return points;
+  void _cancelRouteBuilding() {
+    setState(() {
+      _isRouteBuilding = false;
+      _selectedCategory = null;
+      _routePoints.clear();
+      _markers.removeWhere((m) => m.key != null);
+    });
   }
 
   Future<void> _saveRoute() async {
@@ -184,58 +144,22 @@ class _HomePageState extends State<HomePage> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Сохранить маршрут'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Название маршрута',
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(
-                  children: [
-                    const Icon(Icons.directions_walk, size: 20),
-                    Text('${_routeDistance.toStringAsFixed(1)} км'),
-                  ],
-                ),
-                Column(
-                  children: [
-                    const Icon(Icons.access_time, size: 20),
-                    Text('$_routeDuration мин'),
-                  ],
-                ),
-                Column(
-                  children: [
-                    Icon(_getCategoryIcon(_selectedCategory!), size: 20),
-                    Text(_selectedCategory!),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Сохранить'),
-          ),
-        ],
+      builder: (context) => SaveRouteDialog(
+        nameController: nameController,
+        distance: _routeDistance,
+        duration: _routeDuration,
+        category: _selectedCategory!,
+        categoryIcon: _getCategoryIcon(_selectedCategory!),
+        onSave: () => Navigator.pop(context, true),
+        onCancel: () => Navigator.pop(context, false),
       ),
     );
 
     if (confirmed == true) {
-      await _saveRouteToFirebase(
+      final user = Provider.of<AuthService>(context, listen: false).currentUser;
+      if (user == null) return;
+
+      final route = RouteModel(
         name: nameController.text,
         start: _startPoint!,
         end: _endPoint!,
@@ -243,53 +167,20 @@ class _HomePageState extends State<HomePage> {
         distance: _routeDistance,
         duration: _routeDuration,
         category: _selectedCategory!,
+        date: DateTime.now(),
       );
-    }
-  }
 
-  Future<void> _saveRouteToFirebase({
-    required String name,
-    required LatLng start,
-    required LatLng end,
-    required List<LatLng> points,
-    required double distance,
-    required int duration,
-    required String category,
-  }) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) throw 'Пользователь не авторизован';
-
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('saved_routes')
-          .add({
-        'name': name,
-        'date': DateTime.now().toIso8601String(),
-        'start': {'lat': start.latitude, 'lng': start.longitude},
-        'end': {'lat': end.latitude, 'lng': end.longitude},
-        'points': points.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
-        'distance': distance,
-        'duration': duration,
-        'category': category,
-      });
-
-      setState(() {
-        _isRouteBuilding = false;
-        _selectedCategory = null;
-        _startPoint = null;
-        _endPoint = null;
-        _routePoints.clear();
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Маршрут сохранен!')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
-      );
+      try {
+        await _routeService.firestoreService.saveRoute(route, user.uid);
+        _cancelRouteBuilding();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Маршрут сохранен!')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка: $e')),
+        );
+      }
     }
   }
 
@@ -303,167 +194,58 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _zoomIn() {
+    setState(() => _zoomLevel += 1);
+    _mapService.controller.move(_currentPosition, _zoomLevel);
+  }
+
+  void _zoomOut() {
+    setState(() {
+      if (_zoomLevel > 1) {
+        _zoomLevel -= 1;
+        _mapService.controller.move(_currentPosition, _zoomLevel);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              center: _currentPosition,
-              zoom: _zoomLevel,
-              onTap: (_, point) => _addPoint(point),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c'],
-              ),
-              MarkerLayer(markers: _markers),
-              if (_routePoints.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      color: Colors.blue.withOpacity(0.7),
-                      strokeWidth: 5,
-                    ),
-                  ],
-                ),
-            ],
+          MapWidget(
+            currentPosition: _currentPosition,
+            zoomLevel: _zoomLevel,
+            markers: _markers,
+            routePoints: _routePoints,
+            onTap: _addPoint,
+            mapController: _mapService.controller,
           ),
-
-          if (_isLoadingRoute)
-            const Center(child: CircularProgressIndicator()),
-
           Positioned(
             top: 50,
             left: 16,
             right: 16,
-            child: Card(
-              elevation: 3,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.search),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            decoration: const InputDecoration(
-                              hintText: 'Поиск мест',
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_selectedCategory == null)
-                      SizedBox(
-                        height: 40,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _filterOptions.map((category) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: ActionChip(
-                                label: Text(category),
-                                onPressed: () => _startRouteBuilding(category),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            child: SearchBarWidget(
+              filterOptions: _filterOptions,
+              onFilterSelected: _selectedCategory == null
+                  ? _startRouteBuilding
+                  : null,
             ),
           ),
-
+          if (_isLoadingRoute)
+            const Center(child: CircularProgressIndicator()),
           if (_isRouteBuilding && _startPoint != null)
             Positioned(
               bottom: 20,
               left: 0,
               right: 0,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.directions, color: Colors.blue),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Маршрут в $_selectedCategory',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                '${_routeDistance.toStringAsFixed(1)} км • $_routeDuration мин',
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            setState(() {
-                              _isRouteBuilding = false;
-                              _selectedCategory = null;
-                              _routePoints.clear();
-                              _markers.removeWhere((m) => m.key != null);
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {
-                              setState(() {
-                                _isRouteBuilding = false;
-                                _selectedCategory = null;
-                                _routePoints.clear();
-                                _markers.removeWhere((m) => m.key != null);
-                              });
-                            },
-                            child: const Text('Отмена'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _saveRoute,
-                            child: const Text('Сохранить'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              child: RouteBottomSheet(
+                category: _selectedCategory!,
+                distance: _routeDistance,
+                duration: _routeDuration,
+                onCancel: _cancelRouteBuilding,
+                onSave: _saveRoute,
+                categoryIcon: _getCategoryIcon(_selectedCategory!),
               ),
             ),
         ],
@@ -479,23 +261,13 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'zoom_in',
-            onPressed: () {
-              setState(() => _zoomLevel += 1);
-              _mapController.move(_currentPosition, _zoomLevel);
-            },
+            onPressed: _zoomIn,
             child: const Icon(Icons.add),
           ),
           const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'zoom_out',
-            onPressed: () {
-              setState(() {
-                if (_zoomLevel > 1) {
-                  _zoomLevel -= 1;
-                  _mapController.move(_currentPosition, _zoomLevel);
-                }
-              });
-            },
+            onPressed: _zoomOut,
             child: const Icon(Icons.remove),
           ),
         ],
