@@ -26,7 +26,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final authService = Provider.of<AuthService>(context, listen:  false);
 
     try {
-      await authService.singInWithEmailandPassword(emailController.text, passwordController.text,);
+      await authService.signUpWithEmailandPassword(emailController.text, passwordController.text,);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()),),);
     }
